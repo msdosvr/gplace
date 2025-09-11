@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>gplace — demo (fixed)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://www.google.com/recaptcha/enterprise.js?render=6LemdMQrAAAAAPyy2uTSN-yzQ3KKT19JKIghGMqg"></script>
+<style>
+  body { font-family: Inter, sans-serif; margin:0; height:100vh; overflow:hidden; background:#f3f4f6;}
+  canvas { cursor: grab; display:block; }
+  .context-menu { position: absolute; background: white; border:1px solid #e5e7eb; padding:10px; border-radius:8px; box-shadow:0 6px 18px rgba(2,6,23,0.08); display:none; z-index:9999; width: 260px; }
+  .context-menu .row { margin-bottom:8px; font-size:14px; color:#111827; }
+  #uiTop { position: absolute; right: 12px; top: 12px; z-index: 999; }
+  #palette { display:flex; gap:8px; align-items:center; background:rgba(255,255,255,0.95); padding:8px; border-radius:8px; border:1px solid #e6e6e6; box-shadow:0 8px 20px rgba(2,6,23,0.05); }
+  .swatch { width:28px; height:28px; border-radius:6px; border:2px solid rgba(0,0,0,0.08); cursor:pointer; display:inline-block; box-sizing:border-box; }
+  .swatch.selected { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(16,185,129,0.12); }
+  .tool { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; border:1px solid #e6e6e6; background:white; }
+  .tool.selected { background-color: #dbeafe; border-color: #3b82f6; }
+  #authBox { position:absolute; left:12px; top:12px; z-index:999; background:rgba(255,255,255,0.95); padding:10px; border-radius:8px; border:1px solid #e6e6e6; box-shadow:0 8px 20px rgba(2,6,23,0.03); }
+  #pixelCounter { position:absolute; left:12px; bottom:12px; z-index:999; background:rgba(255,255,255,0.95); padding:8px 12px; border-radius:8px; border:1px solid #e6e6e6; font-family:monospace; }
+  #chatBox { position:absolute; right:12px; bottom:12px; z-index:999; width:340px; max-height:50vh; display:flex; flex-direction:column; gap:6px; }
+  #chatMessages { flex:1; overflow:auto; background:white; border:1px solid #e6e6e6; padding:8px; border-radius:8px; max-height:320px; }
+  #chatInput { display:flex; gap:6px; }
+</style>
+</head>
+<body>
+<canvas id="placeCanvas"></canvas>
+
+<div id="uiTop">
+    <div style="display: flex; align-items: flex-start; gap: 8px;">
+        <div id="tools" class="shadow-sm" style="background:rgba(255,255,255,0.95); padding:8px; border-radius:8px; border:1px solid #e6e6e6; display:flex; gap:8px;">
+            <div id="moveBtn" class="tool" title="Move Tool">🖐️</div>
+            <div id="paintBtn" class="tool" title="Paint Tool">🖌️</div>
+        </div>
+
+        <div id="palette" class="shadow-sm" style="display:none;"> <div id="eraserBtn" class="tool" title="Eraser">🧽</div>
+            <div id="colors"></div>
+        </div>
+    </div>
+</div>
+
+<div id="authBox">
+  <div id="profile" style="display:none; align-items:center; gap:8px;">
+    <img id="avatarImg" src="" width="32" height="32" style="border-radius:6px;" />
+    <div id="usernameLabel" style="font-weight:600;"></div>
+    <div id="adminBadge" style="font-size:12px;color:#fff;background:#ef4444;padding:4px;border-radius:6px;display:none;margin-left:8px;">ADMIN</div>
+    <button id="logoutBtn" style="margin-left:8px;">Logout</button>
+  </div>
+  <div id="authForm">
+    <input id="usernameInp" placeholder="username" style="padding:6px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px;width:160px"><br>
+    <input id="passwordInp" type="password" placeholder="password" style="padding:6px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px;width:160px"><br>
+    <button id="loginBtn" style="padding:6px 8px;margin-right:6px;">Login</button>
+    <button id="registerBtn" style="padding:6px 8px;">Register</button>
+  </div>
+</div>
+
+<div id="pixelCounter">✏️ Not logged in</div>
+
+<div id="chatBox">
+  <div id="chatMessages"></div>
+  <div id="chatInput">
+    <input id="chatTxt" placeholder="Say hi..." style="flex:1;padding:8px;border:1px solid #e6e6e6;border-radius:6px;">
+    <button id="sendChat" style="padding:8px 10px;background:#3b82f6;color:white;border-radius:6px;border:none;">Send</button>
+  </div>
+</div>
+
+<div id="contextMenu" class="context-menu">
+  <div class="row"><strong id="cm-title">Placed Pixel №123</strong></div>
+  <div class="row" id="cm-coords">Coords: (0,0)</div>
+  <div class="row" id="cm-user">Placed by: unknown</div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <button id="reportBtn" class="px-3 py-1 rounded bg-rose-500 text-white">🚩 Report</button>
+    <button id="eraseBtn" class="px-3 py-1 rounded bg-gray-100 border">Erase</button>
+    <button id="copyCoordsBtn" class="px-3 py-1 rounded bg-gray-100 border">Copy</button>
+  </div>
+  <div id="adminActions" style="display:none;margin-top:8px;">
+    <div class="row text-sm text-gray-600">Admin actions:</div>
+    <div style="display:flex;gap:8px;">
+      <button id="ban2w" class="px-2 py-1 rounded bg-yellow-400">Ban 2 weeks</button>
+      <button id="banPerm" class="px-2 py-1 rounded bg-red-600 text-white">Ban perm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- Config ---------- */
+const GRID_WIDTH = 10000, GRID_HEIGHT = 10000;
+const CHUNK_SIZE = 100;
+const colors = [
+  '#ffffff','#e4e4e4','#888888','#222222','#ffa7d1','#e50000','#e59500',
+  '#a06a42','#e5d900','#94e044','#02be01','#00d3dd','#0083c7','#0000ea','#cf6ee4','#820080'
+];
+
+/* ---------- Canvas + viewport ---------- */
+const canvas = document.getElementById('placeCanvas');
+const ctx = canvas.getContext('2d');
+let width = window.innerWidth, height = window.innerHeight;
+canvas.width = width; canvas.height = height;
+
+// viewport initial center
+let cameraZoom = 8;
+let cameraOffset = { x: width/2 - (GRID_WIDTH*cameraZoom)/2, y: height/2 - (GRID_HEIGHT*cameraZoom)/2 };
+let isPanning=false, panStart={x:0,y:0};
+let hoveredPixel = null;
+
+// tool state
+let currentTool = 'pan'; // 'pan' or 'paint'
+
+// known pixels map keyed by "x:y"
+const pixels = new Map();
+
+/* ---------- Subscriptions ---------- */
+const subscribedChunks = new Set(); // strings "cx:cy"
+let pendingSubRequests = []; // queue chunks if WS not open
+let subscribeDebounceTimer = null;
+
+/* ---------- Auth state ---------- */
+let loggedInUser = null; // { user_id, username, avatar, is_admin }
+function saveAuth(user) { localStorage.setItem('gplace_user', JSON.stringify(user)); loggedInUser = user; updateAuthUI(); }
+function clearAuth() { localStorage.removeItem('gplace_user'); loggedInUser = null; updateAuthUI(); }
+function loadAuth() { try { const s = localStorage.getItem('gplace_user'); if (s) loggedInUser = JSON.parse(s); } catch {} updateAuthUI(); }
+function updateAuthUI() {
+  const profile = document.getElementById('profile');
+  const form = document.getElementById('authForm');
+  const adminBadge = document.getElementById('adminBadge');
+  if (loggedInUser) {
+    form.style.display = 'none';
+    profile.style.display = 'flex';
+    document.getElementById('usernameLabel').innerText = loggedInUser.username;
+    document.getElementById('avatarImg').src = '/pfp/' + loggedInUser.avatar;
+    document.getElementById('pixelCounter').innerText = `✏️ Logged as ${loggedInUser.username}`;
+    if (loggedInUser.is_admin) adminBadge.style.display = 'inline-block'; else adminBadge.style.display = 'none';
+  } else {
+    form.style.display = 'block';
+    profile.style.display = 'none';
+    document.getElementById('pixelCounter').innerText = '✏️ Not logged in';
+  }
+}
+loadAuth();
+
+/* Tool selection UI */
+const moveBtn = document.getElementById('moveBtn');
+const paintBtn = document.getElementById('paintBtn');
+const palette = document.getElementById('palette');
+
+function setTool(tool) {
+  currentTool = tool;
+  if (tool === 'pan') {
+    moveBtn.classList.add('selected');
+    paintBtn.classList.remove('selected');
+    palette.style.display = 'none';
+    canvas.style.cursor = 'grab';
+  } else { // paint
+    moveBtn.classList.remove('selected');
+    paintBtn.classList.add('selected');
+    palette.style.display = 'flex';
+    canvas.style.cursor = 'crosshair';
+  }
+}
+moveBtn.addEventListener('click', () => setTool('pan'));
+paintBtn.addEventListener('click', () => setTool('paint'));
+setTool('pan');
+
+/* ---------- Build palette UI ---------- */
+const colorsDiv = document.getElementById('colors');
+let selectedColor = colors[1] || '#000000';
+function buildPalette() {
+  colorsDiv.innerHTML = '';
+  colors.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'swatch';
+    el.style.background = c;
+    if (c === selectedColor) el.classList.add('selected');
+    el.addEventListener('click', () => {
+      selectedColor = c;
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+      el.classList.add('selected');
+    });
+    colorsDiv.appendChild(el);
+  });
+}
+document.getElementById('eraserBtn').addEventListener('click', () => {
+  selectedColor = '#FFFFFF';
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+});
+buildPalette();
+
+/* ---------- Context menu ---------- */
+const cm = document.getElementById('contextMenu');
+let cm_currentPixel = null;
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const gridX = Math.floor((e.clientX - cameraOffset.x) / cameraZoom);
+  const gridY = Math.floor((e.clientY - cameraOffset.y) / cameraZoom);
+  const key = gridX + ':' + gridY;
+  const titleEl = document.getElementById('cm-title');
+  const coordsEl = document.getElementById('cm-coords');
+  const userEl = document.getElementById('cm-user');
+  if (pixels.has(key)) {
+    const p = pixels.get(key);
+    cm_currentPixel = p;
+    titleEl.innerText = 'Placed Pixel №' + (p.id || 'unknown');
+    coordsEl.innerText = 'Coords: (' + p.x + ', ' + p.y + ')';
+    userEl.innerText = 'Placed by: ' + (p.placed_by || 'unknown');
+  } else {
+    cm_currentPixel = { x: gridX, y: gridY, id: null, placed_by:null, placed_by_id:null }
+    titleEl.innerText = 'Empty';
+    coordsEl.innerText = 'Coords: (' + gridX + ',' + gridY + ')';
+    userEl.innerText = 'Placed by: nobody';
+  }
+  const eraseBtn = document.getElementById('eraseBtn');
+  const adminActions = document.getElementById('adminActions');
+  let canErase = false;
+  if (loggedInUser && cm_currentPixel.placed_by_id) {
+    if (loggedInUser.user_id === cm_currentPixel.placed_by_id) canErase = true;
+    if (loggedInUser.is_admin) canErase = true;
+  }
+  eraseBtn.style.display = canErase ? 'inline-block' : 'none';
+  if (loggedInUser && loggedInUser.is_admin && cm_currentPixel.placed_by_id) {
+    adminActions.style.display = 'block';
+  } else adminActions.style.display = 'none';
+  cm.style.left = e.pageX + 'px';
+  cm.style.top = e.pageY + 'px';
+  cm.style.display = 'block';
+});
+document.getElementById('copyCoordsBtn').addEventListener('click', () => {
+  const txt = document.getElementById('cm-coords').innerText;
+  navigator.clipboard.writeText(txt);
+  cm.style.display='none';
+});
+document.getElementById('eraseBtn').addEventListener('click', async () => {
+  cm.style.display='none';
+  if (!loggedInUser) return alert('Log in first to erase.');
+  const p = cm_currentPixel;
+  if (p.placed_by_id && (p.placed_by_id !== loggedInUser.user_id) && !loggedInUser.is_admin) {
+    return alert("You can't erase someone else's pixel.");
+  }
+  await placePixel(p.x, p.y, '#FFFFFF');
+});
+document.getElementById('reportBtn').addEventListener('click', async () => {
+  cm.style.display='none';
+  if (!cm_currentPixel || !cm_currentPixel.placed_by) {
+    return alert('No user to report here.');
+  }
+  const reason = prompt('Report reason (nsfw, nazism, racism, etc):');
+  if (!reason) return;
+  const reporter = loggedInUser ? loggedInUser.username : 'anonymous';
+  const body = new URLSearchParams({
+    reporter,
+    reported_user: cm_currentPixel.placed_by,
+    pixel_id: cm_currentPixel.id || '',
+    x: cm_currentPixel.x,
+    y: cm_currentPixel.y,
+    reason
+  });
+  const res = await fetch('/report', { method:'POST', body });
+  if (res.ok) alert('Report submitted');
+  else alert('Report failed');
+});
+
+/* Admin ban buttons */
+document.getElementById('ban2w').addEventListener('click', async () => {
+  if (!loggedInUser || !loggedInUser.is_admin) return alert('Admin only');
+  const targetId = cm_currentPixel.placed_by_id;
+  if (!targetId) return alert('No user selected');
+  const body = new URLSearchParams({ admin_user_id: loggedInUser.user_id, target_user_id: targetId, duration_days: 14, reason: 'admin_action' });
+  const r = await fetch('/admin/ban', { method:'POST', body });
+  if (r.ok) alert('User banned 14 days'); else alert('Ban failed');
+  cm.style.display='none';
+});
+document.getElementById('banPerm').addEventListener('click', async () => {
+  if (!loggedInUser || !loggedInUser.is_admin) return alert('Admin only');
+  const targetId = cm_currentPixel.placed_by_id;
+  if (!targetId) return alert('No user selected');
+  const body = new URLSearchParams({ admin_user_id: loggedInUser.user_id, target_user_id: targetId });
+  const r = await fetch('/admin/ban', { method:'POST', body });
+  if (r.ok) alert('User permanently banned'); else alert('Ban failed');
+  cm.style.display='none';
+});
+
+/* ---------- Resize handling ---------- */
+window.addEventListener('resize', () => {
+  width = window.innerWidth; height = window.innerHeight;
+  canvas.width = width; canvas.height = height;
+  scheduleSubscribeVisibleChunks();
+});
+
+/* ---------- WebSocket & Chat with dynamic chunk subscribe ---------- */
+const WS_URL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+let ws;
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+
+  ws.addEventListener('open', () => {
+    console.log('WS open');
+    // send any queued sub requests and subscribe current viewport
+    flushPendingSubscriptions();
+    scheduleSubscribeVisibleChunks(true); // immediate
+  });
+
+  ws.addEventListener('message', (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { console.warn('invalid ws data', ev.data); return; }
+    if (msg.type === 'chunk_init') {
+      // server expected to send list of pixels for that chunk
+      // if server provides chunk coords, we won't clear other pixels
+      if (Array.isArray(msg.pixels)) {
+        msg.pixels.forEach(p => {
+          if (typeof p.x === 'number' && typeof p.y === 'number') {
+            pixels.set(p.x + ':' + p.y, p);
+          }
+        });
+      }
+    } else if (msg.type === 'place_pixel') {
+      const p = msg.pixel;
+      if (p && typeof p.x === 'number' && typeof p.y === 'number') pixels.set(p.x + ':' + p.y, p);
+    } else if (msg.type === 'user_banned') {
+      pixels.forEach((v,k) => { if (v.placed_by_id === msg.user_id) pixels.delete(k); });
+      appendChatSystem(`User ${msg.username || msg.user_id} was banned`);
+    } else if (msg.type === 'chat_history') {
+      msg.messages.forEach(m => pushChatMessage(m));
+    } else if (msg.type === 'chat_message') {
+      pushChatMessage(msg.message);
+    } else if (msg.type === 'error') {
+      console.warn('Server error:', msg.message);
+    }
+  });
+
+  ws.addEventListener('close', () => { console.warn('WS closed, reconnect'); setTimeout(connectWS, 1500); });
+  ws.addEventListener('error', (e) => { console.error('WS error', e); });
+}
+connectWS();
+
+/* ---------- Subscription helpers ---------- */
+function chunkKey(cx,cy) { return cx + ':' + cy; }
+function sendWS(obj) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // queue basic subscribe/unsubscribe requests until WS up
+    if (obj && (obj.action === 'subscribe' || obj.action === 'unsubscribe')) {
+      pendingSubRequests.push(obj);
+    }
+    return;
+  }
+  try { ws.send(JSON.stringify(obj)); } catch(e) { console.warn('ws send fail', e); pendingSubRequests.push(obj); }
+}
+function flushPendingSubscriptions() {
+  if (!pendingSubRequests.length || !ws || ws.readyState !== WebSocket.OPEN) return;
+  pendingSubRequests.forEach(o => {
+    try { ws.send(JSON.stringify(o)); } catch { /* ignore */ }
+  });
+  pendingSubRequests = [];
+}
+
+/* Subscribe to a single chunk (idempotent) */
+function subscribeChunk(cx,cy) {
+  const k = chunkKey(cx,cy);
+  if (subscribedChunks.has(k)) return;
+  subscribedChunks.add(k);
+  sendWS({ action:'subscribe', chunk: k });
+}
+
+/* Unsubscribe single chunk */
+function unsubscribeChunk(cx,cy) {
+  const k = chunkKey(cx,cy);
+  if (!subscribedChunks.has(k)) return;
+  subscribedChunks.delete(k);
+  sendWS({ action:'unsubscribe', chunk: k });
+}
+
+/* Determine which chunks are visible in viewport */
+function computeVisibleChunkRange() {
+  // get grid coordinates visible
+  const leftGrid = Math.floor((-cameraOffset.x) / cameraZoom);
+  const topGrid = Math.floor((-cameraOffset.y) / cameraZoom);
+  const rightGrid = Math.ceil((width - cameraOffset.x) / cameraZoom) - 1;
+  const bottomGrid = Math.ceil((height - cameraOffset.y) / cameraZoom) - 1;
+
+  const minCx = Math.max(0, Math.floor(leftGrid / CHUNK_SIZE));
+  const minCy = Math.max(0, Math.floor(topGrid / CHUNK_SIZE));
+  const maxCx = Math.min(Math.floor((GRID_WIDTH-1) / CHUNK_SIZE), Math.floor(rightGrid / CHUNK_SIZE));
+  const maxCy = Math.min(Math.floor((GRID_HEIGHT-1) / CHUNK_SIZE), Math.floor(bottomGrid / CHUNK_SIZE));
+
+  return { minCx, minCy, maxCx, maxCy };
+}
+
+/* Subscribe to all chunks currently visible (debounced) */
+function scheduleSubscribeVisibleChunks(immediate = false) {
+  if (subscribeDebounceTimer) clearTimeout(subscribeDebounceTimer);
+  if (immediate) {
+    subscribeVisibleChunks();
+  } else {
+    subscribeDebounceTimer = setTimeout(() => subscribeVisibleChunks(), 120);
+  }
+}
+
+function subscribeVisibleChunks() {
+  const { minCx, minCy, maxCx, maxCy } = computeVisibleChunkRange();
+  const newSet = new Set();
+  for (let cx = minCx; cx <= maxCx; cx++) {
+    for (let cy = minCy; cy <= maxCy; cy++) {
+      newSet.add(chunkKey(cx,cy));
+      if (!subscribedChunks.has(chunkKey(cx,cy))) {
+        subscribeChunk(cx,cy);
+      }
+    }
+  }
+  // unsubscribe chunks that are no longer visible (to reduce memory)
+  Array.from(subscribedChunks).forEach(k => {
+    if (!newSet.has(k)) {
+      const [cx,cy] = k.split(':').map(n => parseInt(n,10));
+      unsubscribeChunk(cx,cy);
+    }
+  });
+}
+
+/* ---------- Chat UI helpers ---------- */
+const chatMessagesEl = document.getElementById('chatMessages');
+function pushChatMessage(m) {
+  const el = document.createElement('div');
+  el.style.padding = '6px';
+  el.style.borderBottom = '1px solid #f1f5f9';
+  el.innerHTML = `<strong>${escapeHtml(m.username)}</strong>: ${escapeHtml(m.message)}`;
+  chatMessagesEl.appendChild(el);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+function appendChatSystem(msg) {
+  const el = document.createElement('div');
+  el.style.padding = '6px';
+  el.style.color = '#6b7280';
+  el.style.fontSize = '13px';
+  el.textContent = msg;
+  chatMessagesEl.appendChild(el);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+document.getElementById('sendChat').addEventListener('click', () => {
+  const txt = document.getElementById('chatTxt');
+  const val = txt.value.trim();
+  if (!val) return;
+  if (!loggedInUser) {
+    alert('Log in to chat'); return;
+  }
+  const payload = { action:'chat', user_id: loggedInUser.user_id, username: loggedInUser.username, message: val };
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+  txt.value = '';
+});
+
+/* ---------- Place pixels ---------- */
+function sendPlaceViaWS(x,y,color) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.warn('WS not ready');
+    return;
+  }
+  if (!loggedInUser) {
+    alert('Please login to place pixels'); return;
+  }
+  ws.send(JSON.stringify({ action:'place_pixel', user_id: loggedInUser.user_id, x, y, color }));
+}
+async function placePixel(x,y,color) {
+  sendPlaceViaWS(x,y,color);
+}
+
+/* ---------- Mouse interactions ---------- */
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) return;
+  isPanning = true;
+  panStart.x = e.clientX - cameraOffset.x;
+  panStart.y = e.clientY - cameraOffset.y;
+  if (currentTool === 'pan') canvas.style.cursor = 'grabbing';
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 2) return;
+  const dx = e.clientX - (panStart.x + cameraOffset.x);
+  const dy = e.clientY - (panStart.y + cameraOffset.y);
+  if (Math.sqrt(dx*dx + dy*dy) < 6) {
+    if (currentTool === 'paint') {
+      const gridX = Math.floor((e.clientX - cameraOffset.x) / cameraZoom);
+      const gridY = Math.floor((e.clientY - cameraOffset.y) / cameraZoom);
+      placePixel(gridX, gridY, selectedColor);
+    }
+  }
+  isPanning = false;
+  if (currentTool === 'pan') canvas.style.cursor = 'grab';
+  // After pan end, subscribe visible chunks
+  scheduleSubscribeVisibleChunks();
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (isPanning && currentTool === 'pan') {
+    cameraOffset.x = e.clientX - panStart.x;
+    cameraOffset.y = e.clientY - panStart.y;
+    return;
+  }
+  const gridX = Math.floor((e.clientX - cameraOffset.x) / cameraZoom);
+  const gridY = Math.floor((e.clientY - cameraOffset.y) / cameraZoom);
+  if (gridX < 0 || gridY < 0 || gridX >= GRID_WIDTH || gridY >= GRID_HEIGHT) {
+    hoveredPixel = null; return;
+  }
+  hoveredPixel = { x: gridX, y: gridY };
+});
+
+/* ---------- Fast-draw: hold Space ---------- */
+let spaceDrawing = false;
+let spaceInterval = null;
+window.addEventListener('keydown', (e) => {
+  if (currentTool !== 'paint') return;
+  if ((e.code === 'Space' || e.key === ' ') && !spaceDrawing) {
+    e.preventDefault();
+    spaceDrawing = true;
+    if (hoveredPixel) placePixel(hoveredPixel.x, hoveredPixel.y, selectedColor);
+    spaceInterval = setInterval(() => {
+      if (hoveredPixel) placePixel(hoveredPixel.x, hoveredPixel.y, selectedColor);
+    }, 80);
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space' || e.key === ' ') {
+    spaceDrawing = false;
+    if (spaceInterval) { clearInterval(spaceInterval); spaceInterval = null; }
+  }
+});
+
+/* ---------- Wheel zoom ---------- */
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
+  const newZoom = Math.max(1, Math.min(32, cameraZoom * zoomAmount));
+  const zoomDiff = newZoom - cameraZoom;
+  const worldX = (e.clientX - cameraOffset.x) / cameraZoom;
+  const worldY = (e.clientY - cameraOffset.y) / cameraZoom;
+  cameraOffset.x -= worldX * zoomDiff;
+  cameraOffset.y -= worldY * zoomDiff;
+  cameraZoom = newZoom;
+  // update visible chunk subscription on zoom
+  scheduleSubscribeVisibleChunks();
+});
+
+/* ---------- Animation / draw ---------- */
+function draw() {
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0,0,width,height);
+  // draw known pixels
+  pixels.forEach((p,k) => {
+    const sx = cameraOffset.x + p.x * cameraZoom;
+    const sy = cameraOffset.y + p.y * cameraZoom;
+    if (sx + cameraZoom < 0 || sy + cameraZoom < 0 || sx > width || sy > height) return;
+    ctx.fillStyle = p.color || '#000';
+    ctx.fillRect(sx, sy, Math.max(1, cameraZoom), Math.max(1, cameraZoom));
+  });
+  // hover outline
+  if (hoveredPixel && currentTool === 'paint') {
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = cameraZoom > 4 ? 2 : 1;
+    ctx.strokeRect(cameraOffset.x + hoveredPixel.x * cameraZoom, cameraOffset.y + hoveredPixel.y * cameraZoom, cameraZoom, cameraZoom);
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+/* ---------- Auth handlers (unchanged) ---------- */
+document.getElementById('registerBtn').addEventListener('click', () => {
+  const u = document.getElementById('usernameInp').value.trim();
+  const p = document.getElementById('passwordInp').value;
+  if (!u || !p) return alert('Fill username & password');
+
+  grecaptcha.enterprise.ready(async () => {
+    const token = await grecaptcha.enterprise.execute('6LemdMQrAAAAAPyy2uTSN-yzQ3KKT19JKIghGMqg', {action: 'REGISTER'});
+    const body = new URLSearchParams({ username: u, password: p, recaptcha_token: token });
+    const res = await fetch('/register', { method:'POST', body });
+    if (!res.ok) return alert('Register failed: ' + (await res.text()));
+    const data = await res.json();
+    saveAuth({ user_id: data.user_id, username: u, avatar: data.avatar, is_admin: data.is_admin });
+    alert('Registered and logged in as ' + u);
+  });
+});
+
+document.getElementById('loginBtn').addEventListener('click', () => {
+  const u = document.getElementById('usernameInp').value.trim();
+  const p = document.getElementById('passwordInp').value;
+  if (!u || !p) return alert('Fill username & password');
+
+  grecaptcha.enterprise.ready(async () => {
+    const token = await grecaptcha.enterprise.execute('6LemdMQrAAAAAPyy2uTSN-yzQ3KKT19JKIghGMqg', {action: 'LOGIN'});
+    const body = new URLSearchParams({ username: u, password: p, recaptcha_token: token });
+    const res = await fetch('/login', { method:'POST', body });
+    if (!res.ok) return alert('Login failed: ' + (await res.text()));
+    const data = await res.json();
+    saveAuth({ user_id: data.user_id, username: u, avatar: data.avatar, is_admin: data.is_admin || 0 });
+    alert('Logged in as ' + u);
+  });
+});
+document.getElementById('logoutBtn').addEventListener('click', () => { clearAuth(); });
+
+/* ---------- Util ---------- */
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+</script>
+</body>
+</html>
